@@ -2,13 +2,11 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import {
-  Upload,
   File,
   X,
   Radio,
   Send,
   CheckCircle2,
-  AlertCircle,
   Paperclip,
 } from 'lucide-react';
 import { APP_CONFIG } from '@/config/constants';
@@ -18,6 +16,7 @@ import {
   encodeFileRelayPacket,
   encodeTextPacket,
 } from '@/lib/protocol';
+import { acousticEngine } from '@/services/acousticEngine';
 import { AudioProtocol, ReceivedItem, TransmitterState } from '@/types';
 
 interface TransmitterViewProps {
@@ -81,8 +80,8 @@ export function TransmitterView({
     }
   };
 
-  // Broadcast Action Simulation (Step 3)
-  const handleBroadcast = () => {
+  // Broadcast Action with Hardware Speaker Output (Step 4)
+  const handleBroadcast = async () => {
     if (!text.trim() && !selectedFile) return;
 
     try {
@@ -92,7 +91,7 @@ export function TransmitterView({
       if (selectedFile) {
         // Generate mock 4-char token & IV for cloud relay handshake
         const mockToken = Math.random().toString(36).substring(2, 6).toUpperCase();
-        const mockKeyIv = 'mockKeyIvBase64StringForStep3==';
+        const mockKeyIv = 'mockKeyIvBase64StringForStep4==';
         packet = encodeFileRelayPacket(mockToken, mockKeyIv);
 
         transmittedItem = {
@@ -120,14 +119,21 @@ export function TransmitterView({
 
       setLastBroadcastPacket(packet);
 
-      // Step 3: Run simulated 2-second acoustic transmission cycle
+      // Phase 1: Initialize AudioContext & Synthesize carrier
       setTransmitterState('ENCODING_AUDIO');
+      await acousticEngine.initContext();
+      const diag = acousticEngine.getDiagnostics();
+
       logger.info('AUDIO', `Synthesizing acoustic carrier frame (${protocol})`, {
         packet,
         mode: analysis.recommendedMode,
+        hardwareSampleRate: diag.sampleRate ? `${diag.sampleRate} Hz` : 'N/A',
+        baseLatency: diag.baseLatency ? `${(diag.baseLatency * 1000).toFixed(1)} ms` : 'N/A',
+        audioState: diag.state,
       });
 
-      setTimeout(() => {
+      // Phase 2: Emit acoustic tone through physical speaker
+      setTimeout(async () => {
         setTransmitterState('BROADCASTING');
         logger.info(
           'PROTOCOL',
@@ -135,11 +141,14 @@ export function TransmitterView({
           {
             packet,
             bytes: packet.length,
-            durationEst: '1.4s',
+            durationEst: '1.2s',
           }
         );
 
-        setTimeout(() => {
+        try {
+          // Real Web Audio hardware speaker playback (1200ms burst)
+          await acousticEngine.playCalibrationTone(protocol, 1200);
+
           setTransmitterState('COMPLETED');
           logger.success('PROTOCOL', 'Acoustic broadcast completed', {
             packet,
@@ -154,8 +163,11 @@ export function TransmitterView({
           setTimeout(() => {
             setTransmitterState('IDLE');
           }, 2500);
-        }, 1200);
-      }, 800);
+        } catch (playErr) {
+          logger.error('AUDIO', `Speaker playback failed: ${(playErr as Error).message}`);
+          setTransmitterState('IDLE');
+        }
+      }, 500);
     } catch (err) {
       setTransmitterState('IDLE');
       logger.error('PROTOCOL', `Broadcast failed: ${(err as Error).message}`);
@@ -337,14 +349,14 @@ export function TransmitterView({
             {transmitterState === 'ENCODING_AUDIO' && (
               <>
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                <span>Encoding FSK Audio Frame...</span>
+                <span>Initializing 48kHz Audio Engine...</span>
               </>
             )}
 
             {transmitterState === 'BROADCASTING' && (
               <>
                 <Radio className="w-4 h-4 animate-spin" />
-                <span>Broadcasting Acoustic Bursts...</span>
+                <span>Emitting Acoustic Signal Through Speaker...</span>
               </>
             )}
 
