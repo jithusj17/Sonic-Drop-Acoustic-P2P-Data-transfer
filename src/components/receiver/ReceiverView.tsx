@@ -9,9 +9,11 @@ import {
   Trash2,
   Inbox,
   Activity,
+  AlertCircle,
 } from 'lucide-react';
 import { AudioProtocol, ReceivedItem, ReceiverState } from '@/types';
 import { logger } from '@/lib/logger';
+import { useAcoustic } from '@/hooks/useAcoustic';
 import { PayloadCard } from './PayloadCard';
 
 interface ReceiverViewProps {
@@ -27,32 +29,38 @@ export function ReceiverView({
   onAddItem,
   onClearItems,
 }: ReceiverViewProps) {
-  const [receiverState, setReceiverState] = useState<ReceiverState>('IDLE');
+  const { isListening, startListening, stopListening } = useAcoustic();
+  const [isSimulating, setIsSimulating] = useState(false);
   const [simulationIndex, setSimulationIndex] = useState(0);
+  const [micError, setMicError] = useState<string | null>(null);
 
-  // Toggle Listening
-  const handleToggleListening = () => {
-    if (receiverState === 'IDLE') {
-      setReceiverState('LISTENING');
-      logger.info(
-        'AUDIO',
-        `Receiver activated: Listening for ${
-          protocol === 'AUDIBLE_FAST' ? 'audible (1.8k–4.5kHz)' : 'ultrasonic (18.5k+)'
-        } acoustic carriers`,
-        {
-          mode: protocol,
-          carrierFreq: protocol === 'AUDIBLE_FAST' ? '1800 - 4500 Hz' : '18500 - 20000 Hz',
-        }
-      );
+  const effectiveState: ReceiverState = isSimulating
+    ? 'SIGNAL_LOCKED'
+    : isListening
+    ? 'LISTENING'
+    : 'IDLE';
+
+  // Toggle Hardware Microphone Listening (Step 5)
+  const handleToggleListening = async () => {
+    setMicError(null);
+    if (!isListening) {
+      try {
+        await startListening();
+      } catch (err) {
+        const errorMsg =
+          (err as Error).name === 'NotAllowedError'
+            ? 'Microphone permission denied by user'
+            : (err as Error).message;
+        setMicError(errorMsg);
+      }
     } else {
-      setReceiverState('IDLE');
-      logger.info('AUDIO', 'Receiver deactivated: Microphone standby');
+      stopListening();
     }
   };
 
-  // Simulate Incoming Signal (Step 3 verification)
+  // Simulate Incoming Signal (Step 3 & Step 5 verification)
   const handleSimulateIncoming = () => {
-    setReceiverState('SIGNAL_LOCKED');
+    setIsSimulating(true);
 
     const sampleSignals = [
       {
@@ -99,7 +107,7 @@ export function ReceiverView({
       };
 
       onAddItem(newItem);
-      setReceiverState('LISTENING');
+      setIsSimulating(false);
 
       logger.success('PROTOCOL', `Incoming acoustic burst decoded: ${pick.type}`, {
         item: newItem,
@@ -123,35 +131,35 @@ export function ReceiverView({
           <div className="flex items-center gap-2">
             <span
               className={`w-2 h-2 rounded-full ${
-                receiverState === 'IDLE'
+                effectiveState === 'IDLE'
                   ? 'bg-zinc-600'
-                  : receiverState === 'LISTENING'
+                  : effectiveState === 'LISTENING'
                   ? 'bg-emerald-500 animate-pulse'
                   : 'bg-amber-400 animate-ping'
               }`}
             />
             <span className="text-[11px] font-mono text-zinc-400 uppercase">
-              STATUS: {receiverState}
+              STATUS: {effectiveState}
             </span>
           </div>
         </div>
 
         {/* Action Controls */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Main Toggle Button */}
+          {/* Main Microphone Toggle Button */}
           <button
             type="button"
             onClick={handleToggleListening}
             className={`py-3 px-4 flex items-center justify-center gap-2 font-mono text-xs font-medium uppercase tracking-wider transition-colors cursor-pointer select-none border ${
-              receiverState === 'IDLE'
+              !isListening
                 ? 'bg-zinc-950 border-zinc-700 hover:border-zinc-500 hover:bg-zinc-900 text-zinc-100'
                 : 'bg-emerald-950/40 border-emerald-700 text-emerald-400 hover:bg-emerald-950/60'
             }`}
           >
-            {receiverState === 'IDLE' ? (
+            {!isListening ? (
               <>
                 <Mic className="w-4 h-4 text-zinc-400" />
-                <span>Start Listening</span>
+                <span>Start Listening (Microphone)</span>
               </>
             ) : (
               <>
@@ -172,6 +180,19 @@ export function ReceiverView({
           </button>
         </div>
 
+        {/* Error Feedback Strip (e.g. Permission Denied) */}
+        {micError && (
+          <div className="border border-rose-800 bg-zinc-950 p-3 flex items-start gap-2.5 text-rose-400 font-mono text-xs">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold uppercase text-[10px] tracking-wider mb-0.5">
+                Microphone Access Denied / Unavailable
+              </p>
+              <p className="text-rose-200">{micError}</p>
+            </div>
+          </div>
+        )}
+
         {/* Live Audio Telemetry Strip */}
         <div className="border border-zinc-800 bg-zinc-950 p-3 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
           <div className="flex items-center gap-2 text-zinc-400">
@@ -183,7 +204,7 @@ export function ReceiverView({
           </div>
 
           <div className="flex items-center gap-3 text-[11px] text-zinc-500">
-            <span>MIC: STANDALONE SERVICE</span>
+            <span>MIC: {isListening ? 'STREAM LOCKED' : 'STANDBY'}</span>
             <span>•</span>
             <span>FSK READY</span>
           </div>
