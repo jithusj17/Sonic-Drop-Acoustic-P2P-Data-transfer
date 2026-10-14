@@ -45,3 +45,26 @@ export interface PayloadAnalysis {
   isWithinAcousticLimit: boolean;
   utilizationPercent: number;
 }
+
+/* =========================================================================
+   UI & Receiver Feed Types (Step 3)
+   ========================================================================= */
+
+export interface ReceivedItem {
+  id: string;
+  timestamp: string;
+  type: 'TEXT' | 'FILE_RELAY';
+  content: string; // the text/URL or filename
+  byteLength: number;
+  protocol: AudioProtocol;
+  fileUrl?: string;
+  fileSize?: number;
+}
+
+export type TransmitterState =
+  | 'IDLE'
+  | 'ENCODING_AUDIO'
+  | 'BROADCASTING'
+  | 'COMPLETED';
+
+export type ReceiverState = 'IDLE' | 'LISTENING' | 'SIGNAL_LOCKED';
