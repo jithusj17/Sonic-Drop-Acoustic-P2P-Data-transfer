@@ -159,7 +159,7 @@ class AcousticEngine {
    */
   public getFrequencyData(targetBuffer: Uint8Array): boolean {
     if (!this.analyser) return false;
-    this.analyser.getByteFrequencyData(targetBuffer);
+    this.analyser.getByteFrequencyData(targetBuffer as unknown as Uint8Array<ArrayBuffer>);
     return true;
   }
 
@@ -168,7 +168,7 @@ class AcousticEngine {
    */
   public getTimeDomainData(targetBuffer: Uint8Array): boolean {
     if (!this.analyser) return false;
-    this.analyser.getByteTimeDomainData(targetBuffer);
+    this.analyser.getByteTimeDomainData(targetBuffer as unknown as Uint8Array<ArrayBuffer>);
     return true;
   }
 
