@@ -11,12 +11,15 @@ export function useAcoustic() {
   const [engineState, setEngineState] = useState<AudioContextState | 'UNINITIALIZED'>(
     diagnostics.state
   );
-  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [isPlaying, setIsPlaying] = useState<boolean>(diagnostics.isPlaying);
+  const [isListening, setIsListening] = useState<boolean>(diagnostics.isMicActive);
 
   useEffect(() => {
     const unsubscribe = acousticEngine.subscribe((diag) => {
       setDiagnostics(diag);
       setEngineState(diag.state);
+      setIsPlaying(diag.isPlaying);
+      setIsListening(diag.isMicActive);
     });
 
     return () => {
@@ -46,11 +49,45 @@ export function useAcoustic() {
     []
   );
 
+  const startListening = useCallback(async () => {
+    try {
+      await acousticEngine.startMicrophone();
+      setIsListening(true);
+    } finally {
+      setDiagnostics(acousticEngine.getDiagnostics());
+    }
+  }, []);
+
+  const stopListening = useCallback(() => {
+    acousticEngine.stopMicrophone();
+    setIsListening(false);
+    setDiagnostics(acousticEngine.getDiagnostics());
+  }, []);
+
+  const getFrequencyData = useCallback((targetBuffer: Uint8Array) => {
+    return acousticEngine.getFrequencyData(targetBuffer);
+  }, []);
+
+  const getTimeDomainData = useCallback((targetBuffer: Uint8Array) => {
+    return acousticEngine.getTimeDomainData(targetBuffer);
+  }, []);
+
+  const getPeakFrequencyHz = useCallback(() => {
+    return acousticEngine.getPeakFrequencyHz();
+  }, []);
+
   return {
     engineState,
     diagnostics,
     isPlaying,
+    isListening,
     initAudio,
     testSpeaker,
+    startListening,
+    stopListening,
+    getFrequencyData,
+    getTimeDomainData,
+    getPeakFrequencyHz,
+    acousticEngine,
   };
 }
