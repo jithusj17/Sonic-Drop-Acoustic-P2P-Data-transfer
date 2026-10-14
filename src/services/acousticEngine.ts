@@ -1,3 +1,4 @@
+import { RAW_AUDIO_CONSTRAINTS } from '@/config/audioConstraints';
 import { APP_CONFIG } from '@/config/constants';
 import { logger } from '@/lib/logger';
 import { AudioProtocol } from '@/types';
@@ -6,6 +7,8 @@ export interface AudioDiagnostics {
   state: AudioContextState | 'UNINITIALIZED';
   sampleRate: number | null;
   baseLatency: number | null;
+  isMicActive: boolean;
+  isPlaying: boolean;
 }
 
 type AudioStateListener = (diag: AudioDiagnostics) => void;
@@ -14,6 +17,9 @@ class AcousticEngine {
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private isPlaying = false;
+  private isMicActive = false;
+  private micStream: MediaStream | null = null;
+  private micSource: MediaStreamAudioSourceNode | null = null;
   private listeners: Set<AudioStateListener> = new Set();
 
   /**
@@ -40,7 +46,7 @@ class AcousticEngine {
           sampleRate: APP_CONFIG.SAMPLE_RATE,
         });
 
-        // Initialize Analyser for Step 5 spectrum analysis
+        // Initialize Analyser for 60fps spectrum & waveform visualizer
         this.analyser = this.audioCtx.createAnalyser();
         this.analyser.fftSize = 2048;
         this.analyser.smoothingTimeConstant = 0.8;
@@ -52,7 +58,9 @@ class AcousticEngine {
         logger.info('AUDIO', 'Web Audio Context initialized', {
           sampleRate: `${this.audioCtx.sampleRate} Hz`,
           state: this.audioCtx.state,
-          baseLatency: this.audioCtx.baseLatency ? `${(this.audioCtx.baseLatency * 1000).toFixed(1)} ms` : 'N/A',
+          baseLatency: this.audioCtx.baseLatency
+            ? `${(this.audioCtx.baseLatency * 1000).toFixed(1)} ms`
+            : 'N/A',
         });
       }
 
@@ -73,6 +81,133 @@ class AcousticEngine {
   }
 
   /**
+   * Acquires the raw device microphone stream without browser noise suppression or echo cancellation.
+   * Connects microphone strictly to AnalyserNode (NEVER to destination) to prevent feedback howling.
+   */
+  public async startMicrophone(): Promise<void> {
+    if (this.isMicActive) return;
+
+    if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      const err = new Error('Microphone mediaDevices API not available in this browser');
+      logger.error('AUDIO', err.message);
+      throw err;
+    }
+
+    try {
+      const ctx = await this.initContext();
+      if (!ctx || !this.analyser) {
+        throw new Error('AudioContext or AnalyserNode unavailable');
+      }
+
+      // Request raw, unadulterated microphone audio stream
+      this.micStream = await navigator.mediaDevices.getUserMedia(RAW_AUDIO_CONSTRAINTS);
+      this.micSource = ctx.createMediaStreamSource(this.micStream);
+
+      // Connect mic ONLY to analyser (isolated DSP graph, zero speaker output)
+      this.micSource.connect(this.analyser);
+      this.isMicActive = true;
+
+      const track = this.micStream.getAudioTracks()[0];
+      const settings = track?.getSettings() || {};
+
+      logger.success('AUDIO', 'Raw microphone stream locked (zero filtering)', {
+        sampleRate: `${settings.sampleRate || ctx.sampleRate} Hz`,
+        channelCount: settings.channelCount || 1,
+        echoCancellation: settings.echoCancellation ?? false,
+        noiseSuppression: settings.noiseSuppression ?? false,
+        autoGainControl: settings.autoGainControl ?? false,
+      });
+
+      this.notifyState();
+    } catch (err) {
+      this.isMicActive = false;
+      const msg = (err as Error).message || 'Microphone permission denied';
+      logger.error('AUDIO', `Microphone capture failed: ${msg}`);
+      this.notifyState();
+      throw err;
+    }
+  }
+
+  /**
+   * Gracefully releases microphone media stream tracks and disconnects nodes.
+   */
+  public stopMicrophone(): void {
+    if (!this.isMicActive && !this.micStream && !this.micSource) return;
+
+    try {
+      if (this.micSource) {
+        this.micSource.disconnect();
+        this.micSource = null;
+      }
+
+      if (this.micStream) {
+        this.micStream.getTracks().forEach((track) => track.stop());
+        this.micStream = null;
+      }
+
+      this.isMicActive = false;
+      logger.info('AUDIO', 'Microphone stream stopped');
+      this.notifyState();
+    } catch (err) {
+      logger.error('AUDIO', `Error releasing microphone: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Copies current FFT frequency data into target buffer.
+   * Called directly by 60fps Canvas render loops without React state thrashing.
+   */
+  public getFrequencyData(targetBuffer: Uint8Array): boolean {
+    if (!this.analyser) return false;
+    this.analyser.getByteFrequencyData(targetBuffer);
+    return true;
+  }
+
+  /**
+   * Copies current time-domain waveform data into target buffer.
+   */
+  public getTimeDomainData(targetBuffer: Uint8Array): boolean {
+    if (!this.analyser) return false;
+    this.analyser.getByteTimeDomainData(targetBuffer);
+    return true;
+  }
+
+  /**
+   * Computes the dominant frequency bin in Hz and current signal intensity in dB.
+   */
+  public getPeakFrequencyHz(): { freqHz: number; decibels: number } {
+    if (!this.analyser || !this.audioCtx) {
+      return { freqHz: 0, decibels: -100 };
+    }
+
+    const binCount = this.analyser.frequencyBinCount;
+    const buffer = new Uint8Array(binCount);
+    this.analyser.getByteFrequencyData(buffer);
+
+    let maxVal = 0;
+    let maxIdx = 0;
+
+    for (let i = 0; i < binCount; i++) {
+      if (buffer[i] > maxVal) {
+        maxVal = buffer[i];
+        maxIdx = i;
+      }
+    }
+
+    // Ignore ambient room floor noise
+    if (maxVal < 18) {
+      return { freqHz: 0, decibels: -100 };
+    }
+
+    const sampleRate = this.audioCtx.sampleRate;
+    const fftSize = this.analyser.fftSize;
+    const freqHz = Math.round((maxIdx * sampleRate) / fftSize);
+    const decibels = Math.round((maxVal / 255) * 100 - 100);
+
+    return { freqHz, decibels };
+  }
+
+  /**
    * Emits a calibrated acoustic tone through the hardware speaker.
    * - AUDIBLE_FAST: Dual-step FSK telemetry chime (1875 Hz -> 3125 Hz).
    * - ULTRASONIC_STEALTH: 18.5 kHz near-ultrasound carrier burst.
@@ -89,6 +224,8 @@ class AcousticEngine {
     return new Promise<void>((resolve, reject) => {
       try {
         this.isPlaying = true;
+        this.notifyState();
+
         const durationSec = durationMs / 1000;
         const now = ctx.currentTime;
         const attack = 0.03;
@@ -151,6 +288,7 @@ class AcousticEngine {
             // Already disconnected
           }
           this.isPlaying = false;
+          this.notifyState();
           resolve();
         };
 
@@ -158,6 +296,7 @@ class AcousticEngine {
         osc.stop(now + durationSec);
       } catch (err) {
         this.isPlaying = false;
+        this.notifyState();
         logger.error('AUDIO', `Tone playback failed: ${(err as Error).message}`);
         reject(err);
       }
@@ -173,6 +312,8 @@ class AcousticEngine {
         state: 'UNINITIALIZED',
         sampleRate: null,
         baseLatency: null,
+        isMicActive: this.isMicActive,
+        isPlaying: this.isPlaying,
       };
     }
 
@@ -180,11 +321,17 @@ class AcousticEngine {
       state: this.audioCtx.state,
       sampleRate: this.audioCtx.sampleRate,
       baseLatency: this.audioCtx.baseLatency ?? null,
+      isMicActive: this.isMicActive,
+      isPlaying: this.isPlaying,
     };
   }
 
   public getIsPlaying(): boolean {
     return this.isPlaying;
+  }
+
+  public getIsMicActive(): boolean {
+    return this.isMicActive;
   }
 
   public getAnalyser(): AnalyserNode | null {
