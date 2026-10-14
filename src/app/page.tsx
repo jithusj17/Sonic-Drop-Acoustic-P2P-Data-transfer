@@ -15,8 +15,6 @@ import {
   FileText,
   KeyRound,
   ArrowRight,
-  Inbox,
-  Layers,
   Wrench,
 } from 'lucide-react';
 import { APP_CONFIG } from '@/config/constants';
@@ -31,6 +29,7 @@ import { AudioProtocol, DecodedPacket, ReceivedItem } from '@/types';
 import { Header } from '@/components/Header';
 import { TransmitterView } from '@/components/transmitter/TransmitterView';
 import { ReceiverView } from '@/components/receiver/ReceiverView';
+import { Spectrogram } from '@/components/visualizer/Spectrogram';
 import { DebugDrawer } from '@/components/debug/DebugDrawer';
 
 export default function HomePage() {
@@ -71,7 +70,7 @@ export default function HomePage() {
   useEffect(() => {
     logger.info(
       'SYSTEM',
-      `${APP_CONFIG.APP_NAME} v0.3 UI Shell initialized. Minimalist layout active.`,
+      `${APP_CONFIG.APP_NAME} v0.5 Visualizer & Microphone active.`,
       {
         sampleRate: `${APP_CONFIG.SAMPLE_RATE} Hz`,
         protocol,
@@ -199,7 +198,7 @@ export default function HomePage() {
       <Header protocol={protocol} onProtocolChange={setProtocol} />
 
       {/* Main App Container */}
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-8 pb-72 space-y-8">
+      <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-8 pb-72 space-y-6">
         {/* Subtitle / Mode Status Strip */}
         <div className="border border-zinc-800 bg-zinc-900 px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -215,6 +214,11 @@ export default function HomePage() {
             <span>MAX ACOUSTIC: {APP_CONFIG.MAX_ACOUSTIC_BYTES}B</span>
           </div>
         </div>
+
+        {/* Real-Time 60fps Acoustic Spectrogram Visualizer (Step 5) */}
+        <section>
+          <Spectrogram protocol={protocol} />
+        </section>
 
         {/* 2-Tab Switcher: [ 01 // TRANSMIT ] and [ 02 // LISTEN ] */}
         <nav aria-label="Mode selection" className="grid grid-cols-2 gap-2 border-b border-zinc-800 pb-2">
