@@ -16,3 +16,32 @@ export interface LogEntry {
 }
 
 export type LogListener = (logs: LogEntry[]) => void;
+
+/* =========================================================================
+   Packet Protocol Types (Step 2)
+   ========================================================================= */
+
+export type PacketType = 'TEXT' | 'FILE_RELAY';
+
+export type DecodedPacket =
+  | {
+      type: 'TEXT';
+      payload: string;
+      byteLength: number;
+      raw: string;
+    }
+  | {
+      type: 'FILE_RELAY';
+      token: string;
+      keyIv: string;
+      byteLength: number;
+      raw: string;
+    };
+
+export interface PayloadAnalysis {
+  byteLength: number;
+  maxBytes: number;
+  recommendedMode: TransferMode;
+  isWithinAcousticLimit: boolean;
+  utilizationPercent: number;
+}

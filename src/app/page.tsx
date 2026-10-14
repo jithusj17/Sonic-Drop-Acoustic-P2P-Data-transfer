@@ -1,21 +1,42 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   Volume2,
   ShieldCheck,
   AlertTriangle,
   Radio,
-  FileCode,
-  Lock,
   Layers,
+  Code2,
+  Bug,
+  FileText,
+  KeyRound,
+  ArrowRight,
 } from 'lucide-react';
 import { APP_CONFIG } from '@/config/constants';
 import { logger } from '@/lib/logger';
+import {
+  analyzePayload,
+  decodePacket,
+  encodeFileRelayPacket,
+  encodeTextPacket,
+} from '@/lib/protocol';
+import { DecodedPacket } from '@/types';
 import { DebugDrawer } from '@/components/debug/DebugDrawer';
 
 export default function HomePage() {
+  // Protocol Sandbox State
+  const [inputText, setInputText] = useState('Hello SonicDrop! 🚀 (AirDrop over Sound)');
+  const [rawFrame, setRawFrame] = useState('');
+  const [decodedResult, setDecodedResult] = useState<DecodedPacket | null>(null);
+  const [protocolError, setProtocolError] = useState<string | null>(null);
+
+  // Live UTF-8 analysis
+  const analysis = useMemo(() => {
+    return analyzePayload(inputText);
+  }, [inputText]);
+
   // Boot system message on mount
   useEffect(() => {
     logger.info(
@@ -29,6 +50,7 @@ export default function HomePage() {
     );
   }, []);
 
+  // Diagnostic Test Actions (Step 1)
   const handleTestSystem = () => {
     logger.info('SYSTEM', 'Diagnostic sweep passed: Memory & runtime nominal', {
       timestamp: Date.now(),
@@ -74,6 +96,55 @@ export default function HomePage() {
     );
   };
 
+  // Protocol Sandbox Actions (Step 2)
+  const handleEncodeText = () => {
+    setProtocolError(null);
+    try {
+      const frame = encodeTextPacket(inputText);
+      setRawFrame(frame);
+      setDecodedResult(null);
+    } catch (err) {
+      setProtocolError((err as Error).message);
+    }
+  };
+
+  const handleSimulateFileHandshake = () => {
+    setProtocolError(null);
+    try {
+      const frame = encodeFileRelayPacket('K9X2', 'dGhpcyBpcyBhIHRlc3Qga2V5');
+      setRawFrame(frame);
+      setDecodedResult(null);
+    } catch (err) {
+      setProtocolError((err as Error).message);
+    }
+  };
+
+  const handleDecodeFrame = () => {
+    setProtocolError(null);
+    try {
+      if (!rawFrame) {
+        throw new Error('No acoustic frame available. Encode text or simulate handshake first.');
+      }
+      const decoded = decodePacket(rawFrame);
+      setDecodedResult(decoded);
+    } catch (err) {
+      setProtocolError((err as Error).message);
+      setDecodedResult(null);
+    }
+  };
+
+  const handleTestCorruptedFrame = () => {
+    setProtocolError(null);
+    const corrupted = 'X:corrupted_noise';
+    setRawFrame(corrupted);
+    try {
+      decodePacket(corrupted);
+    } catch (err) {
+      setProtocolError((err as Error).message);
+      setDecodedResult(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-zinc-800 selection:text-zinc-100">
       {/* Top Header */}
@@ -96,7 +167,7 @@ export default function HomePage() {
           <div className="flex items-center gap-2 px-2.5 py-1 border border-zinc-800 bg-zinc-900">
             <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
             <span className="text-[11px] font-mono tracking-wider text-zinc-300">
-              PHASE 1 // SYSTEM READY
+              PHASE 2 // PROTOCOL ENGINE ACTIVE
             </span>
           </div>
         </div>
@@ -109,20 +180,19 @@ export default function HomePage() {
           <div className="border border-zinc-800 bg-zinc-900 p-6">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">
-                ARCHITECTURE FOUNDATION
+                ACOUSTIC PACKET PROTOCOL
               </span>
-              <span className="text-[10px] font-mono text-zinc-400">
-                STEP 01 COMPLETE
+              <span className="text-[10px] font-mono text-emerald-400">
+                STEP 02 READY
               </span>
             </div>
             <h2 className="text-xl font-medium tracking-tight text-zinc-100 mb-2">
-              AirDrop Over Sound — Diagnostic Console
+              AirDrop Over Sound — Diagnostic & Protocol Inspector
             </h2>
             <p className="text-sm text-zinc-400 leading-relaxed max-w-2xl">
-              Zero-blur, flat matte dark minimal UI with decoupled singleton
-              logging and Web Audio isolation. Verify system parameters and
-              trigger diagnostic log streams into the real-time Debug Drawer
-              below.
+              Zero-blur, flat matte dark minimal UI with real-time UTF-8 byte counting,
+              dual-mode acoustic routing (<code className="text-zinc-300 bg-zinc-950 px-1 border border-zinc-800">T:</code> direct vs <code className="text-zinc-300 bg-zinc-950 px-1 border border-zinc-800">F:</code> relay),
+              and pub/sub logging into the Debug Drawer below.
             </p>
           </div>
         </section>
@@ -139,7 +209,6 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {/* Stat Block 1 */}
             <div className="border border-zinc-800 bg-zinc-900 p-4 transition-colors hover:border-zinc-700">
               <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">
                 SAMPLE RATE
@@ -152,7 +221,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Stat Block 2 */}
             <div className="border border-zinc-800 bg-zinc-900 p-4 transition-colors hover:border-zinc-700">
               <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">
                 MAX ACOUSTIC BYTES
@@ -165,7 +233,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Stat Block 3 */}
             <div className="border border-zinc-800 bg-zinc-900 p-4 transition-colors hover:border-zinc-700">
               <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">
                 RELAY TTL
@@ -180,14 +247,192 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* 4 Test Buttons */}
+        {/* STEP 2: Protocol Inspector Sandbox Card */}
+        <section className="mb-8">
+          <div className="border border-zinc-800 bg-zinc-900 p-6">
+            {/* Header */}
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-zinc-800">
+              <div className="flex items-center gap-2">
+                <Code2 className="w-4 h-4 text-emerald-400" />
+                <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-100">
+                  Protocol Inspector // Packet Sandbox
+                </h3>
+              </div>
+              <span className="text-[11px] font-mono text-zinc-400">
+                src/lib/protocol.ts
+              </span>
+            </div>
+
+            {/* Input & Live Byte Counter */}
+            <div className="space-y-3 mb-6">
+              <label
+                htmlFor="protocol-input"
+                className="block text-[11px] font-mono uppercase tracking-wider text-zinc-400"
+              >
+                Payload Input (Unicode & Emoji Aware)
+              </label>
+
+              <textarea
+                id="protocol-input"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder="Type text, emoji, key, or URL to analyze..."
+                className="w-full h-24 bg-zinc-950 border border-zinc-800 focus:border-zinc-600 text-zinc-100 font-mono text-xs p-3 outline-none resize-none transition-colors"
+              />
+
+              {/* Byte Counter Telemetry Row */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs text-zinc-300">
+                    <strong
+                      className={
+                        analysis.isWithinAcousticLimit
+                          ? 'text-emerald-400'
+                          : 'text-amber-400'
+                      }
+                    >
+                      {analysis.byteLength}
+                    </strong>
+                    <span className="text-zinc-500"> / </span>
+                    <span className="text-zinc-400">{APP_CONFIG.MAX_ACOUSTIC_BYTES} BYTES</span>
+                  </span>
+
+                  <span className="text-[11px] font-mono text-zinc-500">
+                    ({analysis.utilizationPercent}% utilization)
+                  </span>
+                </div>
+
+                {/* Mode Indicator Badge */}
+                <div>
+                  {analysis.isWithinAcousticLimit ? (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 border border-emerald-800 bg-zinc-950 text-emerald-400 font-mono text-[11px]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      PURE_ACOUSTIC (Direct Sound)
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 border border-amber-800 bg-zinc-950 text-amber-400 font-mono text-[11px]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      CLOUD_RELAY (Overflow Handshake)
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Crisp Progress Bar */}
+              <div className="w-full h-1.5 bg-zinc-950 border border-zinc-800">
+                <div
+                  className={`h-full transition-all duration-150 ${
+                    analysis.isWithinAcousticLimit
+                      ? 'bg-emerald-500'
+                      : 'bg-amber-500'
+                  }`}
+                  style={{
+                    width: `${Math.min(100, (analysis.byteLength / APP_CONFIG.MAX_ACOUSTIC_BYTES) * 100)}%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Action Buttons Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 mb-6">
+              <button
+                type="button"
+                onClick={handleEncodeText}
+                className="flex items-center justify-center gap-2 border border-zinc-800 bg-zinc-950 hover:border-zinc-700 hover:bg-zinc-900 active:bg-zinc-800 py-2.5 px-3 font-mono text-xs text-zinc-200 transition-colors cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Encode Text (T:)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSimulateFileHandshake}
+                className="flex items-center justify-center gap-2 border border-zinc-800 bg-zinc-950 hover:border-zinc-700 hover:bg-zinc-900 active:bg-zinc-800 py-2.5 px-3 font-mono text-xs text-zinc-200 transition-colors cursor-pointer"
+              >
+                <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                <span>Simulate Handshake (F:)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDecodeFrame}
+                className="flex items-center justify-center gap-2 border border-zinc-800 bg-zinc-950 hover:border-zinc-700 hover:bg-zinc-900 active:bg-zinc-800 py-2.5 px-3 font-mono text-xs text-zinc-200 transition-colors cursor-pointer"
+              >
+                <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
+                <span>Decode Frame</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleTestCorruptedFrame}
+                className="flex items-center justify-center gap-2 border border-zinc-800 bg-zinc-950 hover:border-rose-900 hover:bg-zinc-900 active:bg-zinc-800 py-2.5 px-3 font-mono text-xs text-rose-300 transition-colors cursor-pointer"
+              >
+                <Bug className="w-3.5 h-3.5 text-rose-400" />
+                <span>Corrupted Frame (X:)</span>
+              </button>
+            </div>
+
+            {/* Error Telemetry (if any) */}
+            {protocolError && (
+              <div className="mb-4 border border-rose-800 bg-zinc-950 p-3 flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-mono text-[11px] uppercase tracking-wider text-rose-400 mb-0.5">
+                    PROTOCOL EXCEPTION CAUGHT
+                  </div>
+                  <div className="font-mono text-xs text-rose-200 break-all">
+                    {protocolError}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Telemetry Output Boxes */}
+            <div className="space-y-3">
+              {/* Raw Frame Slot */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">
+                    Acoustic Frame Buffer (Over-the-Air Payload)
+                  </span>
+                  {rawFrame && (
+                    <span className="text-[10px] font-mono text-zinc-500">
+                      {rawFrame.length} chars
+                    </span>
+                  )}
+                </div>
+                <div className="border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs select-all break-all text-zinc-300 min-h-11 flex items-center">
+                  {rawFrame ? (
+                    <span className="text-emerald-400">{rawFrame}</span>
+                  ) : (
+                    <span className="text-zinc-600">// Click an encode or simulate action above</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Decoded Structure Slot */}
+              {decodedResult && (
+                <div>
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1.5">
+                    Decoded Packet Structure
+                  </div>
+                  <pre className="border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs text-zinc-200 overflow-x-auto whitespace-pre-wrap">
+                    {JSON.stringify(decodedResult, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Diagnostic Buttons (Step 1) */}
         <section className="mb-8">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xs font-mono uppercase tracking-wider text-zinc-400">
-              Diagnostic Log Dispatches
+              System Diagnostics
             </h3>
             <span className="text-[11px] font-mono text-zinc-400">
-              Click to emit reactive logs
+              Step 1 Telemetry
             </span>
           </div>
 
